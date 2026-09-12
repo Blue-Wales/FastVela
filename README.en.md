@@ -21,65 +21,66 @@
 
 <div align="center">
 
-**简体中文** | [English](./README.en.md)
+[简体中文](./README.md) | **English**
 
 </div>
 
-## 介绍
+## Introduction
 
-FastBrace是一个基于Python**高性能异步框架Fastapi构建的轻量级脚手架**，目标是为开发企业级后台管理项目提供开箱即用的解决方案， 帮助你快速、高效的完成企业级高性能接口开发
+FastBrace is a **lightweight scaffolding built on FastAPI, Python's high-performance asynchronous framework**. It aims to provide an out-of-the-box solution for developing enterprise-level admin projects, helping you quickly and efficiently build high-performance enterprise APIs.
 
-## 文档说明
+## Documentation
 
-在线文档地址： [点我查看](https://docs.fastbrace.online/)
+Start the local docs dev server:
 
-本地启动文档开发服务器：
+Online documentation available at ["/click me/"](https://docs.fastbrace.online/).
+
+
 
 ```bash
 cd docs && npm install && npm run docs:dev
 ```
 
+## Quick Start
 
-## 快速开始
-
-### 环境要求
+### Requirements
 
 - Python 3.10+
 - MySQL 8.x
 - Redis 6+
 - uv
 
-### 安装依赖
+### Install Dependencies
 
 ```bash
 uv sync --all-extras
 ```
 
-如果当前环境尚未安装 uv：
+If uv is not installed yet:
 
 ```bash
 pip install uv
 ```
 
-### 启动 API
+### Start API
 
 ```bash
 uv run python main.py server api
 ```
 
-访问：
+Open:
 
 - Swagger: `http://127.0.0.1:8000/docs`
 - OpenAPI JSON: `http://127.0.0.1:8000/openapi.json`
 - Health Check: `http://127.0.0.1:8000/health`
 
-### 启动事件总线
+### Start Event Bus
 
 ```bash
 uv run python main.py server events
 ```
 
-### 启动定时任务
+### Start Scheduled Jobs
 
 ```bash
 uv run python main.py server cron_jobs
@@ -89,9 +90,9 @@ uv run python main.py server cron_jobs
 
 [MIT](LICENSE)
 
-## 贡献
+## Contributing
 
-欢迎提交 Issue 和 Pull Request。建议贡献前先运行：
+Issues and pull requests are welcome. Before contributing, run:
 
 ```bash
 make agent-finish

@@ -10,7 +10,7 @@ import traceback
 import click
 from loguru import logger
 
-from infrastructure.core.app import auto_load_modules
+from infrastructure.core.app import RUNTIME_MODULES, auto_load_modules
 from infrastructure.core.log import ModulesForLogger, init_logger
 from infrastructure.core.settings import app_settings
 from infrastructure.events.event_bus_service import EventBusService
@@ -34,26 +34,7 @@ def start_event_bus():
 
     # 预加载modules
     auto_load_modules(
-        base_packages=[
-            "application.file_app",
-            "application.role_app",
-            "application.user_app",
-            "domain.events.user_events",
-            "domain.repo.file_repo",
-            "domain.repo.permission_resource_repo",
-            "domain.repo.role_repo",
-            "domain.repo.user_repo",
-            "domain.service.email_service",
-            "domain.service.permission_service",
-            "domain.service.role_service",
-            "domain.service.user_service",
-            "infrastructure.models.file",
-            "infrastructure.models.permission_resources",
-            "infrastructure.models.role",
-            "infrastructure.models.user",
-            "infrastructure.events",
-            "event_handlers.email_send_handler",
-        ]
+        base_packages=RUNTIME_MODULES
     )
     init_database(app_settings.db)
     _start_cross_event_bus()

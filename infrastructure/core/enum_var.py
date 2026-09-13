@@ -9,8 +9,6 @@
 
 from enum import Enum
 
-from infrastructure.utils.custom_enum import BaseCodeLabelEnum
-
 
 class BeanScope(Enum):
     """
@@ -61,29 +59,6 @@ class FileType(Enum):
     personal_photo = 2  # 个人照片
     personal_qr_code = 3  # 个人二维码
     markdown_file = 19  # markdown文件
-
-
-class Permissions(Enum):
-    """
-    权限类型
-    """
-
-    DASHBOARD = "Dashboard"
-    USER_MANAGE = "UserManage"
-
-    ACCOUNT = "UserManage.Account"
-    ROLE = "UserManage.Role"
-    DEPARTMENT = "UserManage.Department"
-
-
-class PermissionLevel(BaseCodeLabelEnum):
-    """
-    权限等级
-    """
-
-    VIEW = (1, "查看")
-    EDIT = (2, "操作")
-    EXPORT = (3, "导出")
 
 
 class LangCode(Enum):

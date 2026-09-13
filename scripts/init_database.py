@@ -23,31 +23,11 @@ from alembic import command
 from alembic.config import Config
 from loguru import logger
 from sqlalchemy import inspect, text
-from sqlalchemy.exc import IntegrityError
 
 from infrastructure.core.app import auto_load_modules
-from infrastructure.core.enum_var import PermissionLevel, Permissions
 from infrastructure.core.settings import app_settings
-from infrastructure.models.role import (
-    ADMIN_ROLE_CODE,
-    ADMIN_ROLE_ID,
-    ADMIN_ROLE_NAME,
-    Role,
-    RoleClosure,
-)
-from infrastructure.models.user import User, UserRoleRelations
 from infrastructure.utils import database
-from infrastructure.utils.admin_constants import (
-    ADMIN_EMAIL,
-    ADMIN_GENDER,
-    ADMIN_MOBILE,
-    ADMIN_NAME,
-    ADMIN_NICK_NAME,
-    ADMIN_PASSWORD,
-    ADMIN_USERNAME,
-)
 from infrastructure.utils.database_util import get_database_url
-from infrastructure.utils.password_utils import hash_password
 
 
 def load_all_models() -> None:
@@ -149,7 +129,7 @@ def check_tables() -> bool:
 
     db = database.session_maker_local()
     try:
-        for table in ("user", "roles"):
+        for table in ("customer", "customer_identity", "file"):
             result = db.execute(text(f"SHOW TABLES LIKE '{table}'"))
             if result.fetchone():
                 logger.info(f"验证: {table} 表已存在")
@@ -160,95 +140,7 @@ def check_tables() -> bool:
         logger.exception("验证表结构失败")
         return False
     finally:
-        database.session_maker_local.remove()
-
-
-def init_admin_user() -> bool:
-    """使用 SQLAlchemy ORM 初始化超级管理员用户，支持断点续跑。"""
-    logger.info("开始初始化超级管理员用户...")
-
-    if database.session_maker_local is None:
-        logger.error("数据库未初始化")
-        return False
-
-    db = database.session_maker_local()
-    try:
-        # 角色已存在视为已初始化过
-        admin_role = db.query(Role).filter(Role.entity_id == ADMIN_ROLE_ID).first()
-        if admin_role:
-            logger.info("超级管理员角色已存在，跳过初始化")
-            return True
-
-        # 1. 创建超级管理员角色
-        permissions = {
-            permission.value: [
-                PermissionLevel.VIEW.value,
-                PermissionLevel.EDIT.value,
-                PermissionLevel.EXPORT.value,
-            ]
-            for permission in Permissions
-        }
-        db.add(
-            Role(
-                entity_id=ADMIN_ROLE_ID,
-                code=ADMIN_ROLE_CODE,
-                name=ADMIN_ROLE_NAME,
-                permissions=permissions,
-            )
-        )
-        logger.info("创建超级管理员角色")
-
-        # 2. 创建角色层级关系（超级管理员为根角色）
-        if not db.query(RoleClosure).filter(
-            RoleClosure.ancestor == ADMIN_ROLE_ID,
-            RoleClosure.descendant == ADMIN_ROLE_ID,
-        ).first():
-            db.add(RoleClosure(ancestor=ADMIN_ROLE_ID, descendant=ADMIN_ROLE_ID, depth=0))
-            logger.info("创建角色层级关系")
-
-        # 3. 创建超级管理员用户
-        if not db.query(User).filter(User.entity_id == ADMIN_ROLE_ID).first():
-            db.add(
-                User(
-                    entity_id=ADMIN_ROLE_ID,
-                    username=ADMIN_USERNAME,
-                    name=ADMIN_NAME,
-                    mobile=ADMIN_MOBILE,
-                    password_hash=hash_password(ADMIN_PASSWORD),
-                    gender=ADMIN_GENDER,
-                    email=ADMIN_EMAIL,
-                    status=1,
-                    nick_name=ADMIN_NICK_NAME,
-                )
-            )
-            logger.info("创建超级管理员用户")
-
-        # 4. 创建用户角色关联
-        if not db.query(UserRoleRelations).filter(
-            UserRoleRelations.user_id == ADMIN_ROLE_ID,
-            UserRoleRelations.role_id == ADMIN_ROLE_ID,
-        ).first():
-            db.add(UserRoleRelations(user_id=ADMIN_ROLE_ID, role_id=ADMIN_ROLE_ID))
-            logger.info("创建用户角色关联")
-
-        db.commit()
-        logger.info("超级管理员用户初始化完成，用户名: {}", ADMIN_USERNAME)
-        logger.warning("请在生产环境中立即修改默认凭据和个人信息")
-        return True
-
-    except IntegrityError as exc:
-        db.rollback()
-        if "Duplicate entry" in str(exc):
-            logger.warning("管理员数据已存在，跳过初始化")
-            return True
-        logger.error(f"数据完整性错误: {exc}")
-        return False
-    except Exception:
-        db.rollback()
-        logger.exception("初始化管理员用户失败")
-        return False
-    finally:
-        database.session_maker_local.remove()
+        db.close()
 
 
 def main() -> int:
@@ -281,10 +173,6 @@ def main() -> int:
 
         # 6. 检查表结构
         if not check_tables():
-            return 1
-
-        # 7. 初始化管理员用户
-        if not init_admin_user():
             return 1
 
         logger.info("数据库初始化完成")

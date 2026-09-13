@@ -35,13 +35,14 @@ def db_session(db_engine) -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     """Create a test client for API testing."""
     from fastapi.testclient import TestClient
 
     from infrastructure.core.app import create_app
     from infrastructure.core.settings import app_settings
 
+    monkeypatch.setattr("infrastructure.core.app.init_logger", lambda _: None)
     app = create_app(app_settings)
     with TestClient(app) as test_client:
         yield test_client

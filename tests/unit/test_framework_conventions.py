@@ -13,10 +13,8 @@ from pathlib import Path
 
 import yaml
 
-from domain.repo.interfaces.user import IUserRepository
-from domain.repo.user_repo import UserRepository
-from domain.service.interfaces.permission import IPermissionService
-from domain.service.permission_service import PermissionService
+from domain.repo.customer_repo import CustomerRepository
+from domain.repo.interfaces.customer import ICustomerRepository
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INTERFACE_DIRS = (
@@ -26,10 +24,8 @@ INTERFACE_DIRS = (
 
 
 def test_domain_interfaces_are_separate_from_implementations():
-    assert IUserRepository.__module__ == "domain.repo.interfaces.user"
-    assert UserRepository.__module__ == "domain.repo.user_repo"
-    assert IPermissionService.__module__ == "domain.service.interfaces.permission"
-    assert PermissionService.__module__ == "domain.service.permission_service"
+    assert ICustomerRepository.__module__ == "domain.repo.interfaces.customer"
+    assert CustomerRepository.__module__ == "domain.repo.customer_repo"
 
 
 def test_domain_interface_contracts_have_docstrings():

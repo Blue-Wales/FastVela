@@ -7,7 +7,6 @@
 @Date    : 2026-08-22
 """
 
-import traceback
 from contextlib import contextmanager
 
 from loguru import logger
@@ -15,11 +14,11 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, declarative_base, scoped_session, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from infrastructure.core.error_handler import DuplicateEntryError
 
-session_maker_local: scoped_session[Session] | None = None
+session_maker_local: sessionmaker[Session] | None = None
 
 Base = declarative_base()
 
@@ -40,6 +39,7 @@ def init_database(db: BaseModel):
         host=db.host,
         port=db.port,
         database=db.database,
+        query={"charset": "utf8mb4"} if "mysql" in db.drivername else {},
     )
 
     # 创建数据库引擎并配置连接池参数
@@ -53,12 +53,12 @@ def init_database(db: BaseModel):
 
     session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     # 创建数据库会话工厂并绑定引擎
-    session_maker_local = scoped_session(session_factory)
+    session_maker_local = session_factory
 
     return engine
 
 
-async def get_db():
+def get_db():
     """
     获取数据库会话。
     """
@@ -71,17 +71,17 @@ async def get_db():
     except IntegrityError as e:
         db.rollback()
         if "Duplicate entry" in str(e):
-            logger.debug(f"重复信息插入: {e}，traceback: {traceback.format_exc()}")
+            logger.debug("数据库唯一约束冲突")
             raise DuplicateEntryError("重复信息插入")
         else:
-            logger.error(f"数据库插入错误: {e}，traceback: {traceback.format_exc()}")
+            logger.error("数据库写入失败: {}", type(e).__name__)
             raise e
     except Exception as e:
-        logger.error(f"异常信息: {e}，traceback: {traceback.format_exc()}")
+        logger.debug("请求事务回滚: {}", type(e).__name__)
         db.rollback()
         raise
     finally:
-        session_maker_local.remove()
+        db.close()
 
 
 @contextmanager
@@ -96,8 +96,8 @@ def celery_db():
         yield db
         db.commit()
     except Exception as e:
-        logger.error(f"{e}")
+        logger.error("任务事务回滚: {}", type(e).__name__)
         db.rollback()
         raise
     finally:
-        session_maker_local.remove()
+        db.close()

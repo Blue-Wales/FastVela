@@ -13,7 +13,7 @@ cd "$PROJECT_ROOT" || exit 1
 if [ ! -e "$CONTAINER_ALREADY_STARTED" ]; then
     echo "-- First container startup --"
     echo "🔧 初始化数据库..."
-    python scripts/init_database.py && python scripts/permission_init.py
+    python scripts/init_database.py
     if [ $? -eq 0 ]; then
         touch "$CONTAINER_ALREADY_STARTED"
         echo "✅ 数据库初始化完成"
@@ -25,7 +25,6 @@ else
     echo "-- Not first container startup --"
     # 运行 Alembic 迁移确保数据库结构是最新的
     alembic upgrade head
-    python scripts/permission_init.py --force-recreate
     if [ $? -eq 0 ]; then
         echo "✅ 数据库迁移检查完成"
     else

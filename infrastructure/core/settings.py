@@ -10,7 +10,7 @@
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, RootModel, model_validator
 from pydantic_settings import (
@@ -179,8 +179,40 @@ class SMSErrCodes(RootModel[dict[str, str]]):
 # ============================================================
 
 
+class WeChatMPSettings(BaseModel):
+    """公众号配置，默认关闭；安全模式回调校验消息正文和 AppID。"""
+
+    enabled: bool = False
+    app_id: str = ""
+    app_secret: str = ""
+    original_id: str = ""
+    callback_token: str = ""
+    callback_mode: Literal["safe", "plain"] = "safe"
+    encoding_aes_key: str = ""
+    qr_expire_seconds: int = Field(default=180, ge=60, le=600)
+    callback_tolerance: int = Field(default=300, ge=60, le=600)
+    http_timeout: float = Field(default=5, gt=0, le=5)
+
+    @model_validator(mode="after")
+    def validate_enabled(self):
+        if self.enabled:
+            if not all((self.app_id, self.app_secret, self.original_id, self.callback_token)):
+                raise ValueError("启用公众号登录需要 AppID、AppSecret、原始ID和回调Token")
+            if self.callback_mode == "safe":
+                import base64
+                try:
+                    key = base64.b64decode(self.encoding_aes_key + "=", validate=True)
+                except ValueError:
+                    raise ValueError("EncodingAESKey 格式无效")
+                if len(self.encoding_aes_key) != 43 or len(key) != 32:
+                    raise ValueError("安全模式需要43位 EncodingAESKey")
+        return self
+
+
 class AppSettings(BaseSettings):
     """从 YAML 文件加载的主应用配置。"""
+
+    wechat_mp: WeChatMPSettings = Field(default_factory=WeChatMPSettings)
 
     login_url: str
 

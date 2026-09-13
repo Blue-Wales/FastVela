@@ -135,3 +135,14 @@ sms_code:
 
 sms_err_codes:
   "OK": 'Success'
+
+# 微信公众号登录；启用时通过环境变量注入所有敏感参数。
+wechat_mp:
+  enabled: false
+  app_id: ""
+  app_secret: ""
+  original_id: ""
+  callback_token: ""
+  callback_mode: safe
+  encoding_aes_key: ""
+  qr_expire_seconds: 180

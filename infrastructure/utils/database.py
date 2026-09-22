@@ -16,7 +16,7 @@ from sqlalchemy.engine import URL
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
-from infrastructure.core.error_handler import DuplicateEntryError
+from infrastructure.core.error_handler import DuplicateEntryError, OrangeCraftException
 
 session_maker_local: sessionmaker[Session] | None = None
 
@@ -76,6 +76,9 @@ def get_db():
         else:
             logger.error("数据库写入失败: {}", type(e).__name__)
             raise e
+    except OrangeCraftException:
+        db.rollback()
+        raise
     except Exception as e:
         logger.debug("请求事务回滚: {}", type(e).__name__)
         db.rollback()

@@ -4,8 +4,8 @@
 @Project : FastBrace
 @File    : session_store.py
 @Author  : Blue-Wales
-@Date    : 2026-09-12
-@Desc    : Redis 登录状态与客户会话；Lua 保证多 worker 下的状态变更原子性。
+@Date    : 2026-09-16
+@Desc    : Redis 客户登录状态与会话存储
 """
 
 import hashlib
@@ -18,11 +18,12 @@ from infrastructure.core.error_handler import AuthorizationError, InvalidInputEr
 
 
 def digest(value: str) -> str:
+    """计算登录凭据摘要。"""
     return hashlib.sha256(value.encode()).hexdigest()
 
 
 class CustomerSessionStore:
-    """短期扫码状态、单次领取、轮换刷新令牌和可撤销会话。"""
+    """保存扫码状态、单次领取凭据和可撤销客户会话。"""
 
     def __init__(self, redis_client, settings):
         self.redis = redis_client
@@ -30,35 +31,39 @@ class CustomerSessionStore:
         self.prefix = "fastvela:auth:"
 
     def scene_key(self, scene: str) -> str:
+        """生成扫码场景缓存键。"""
         return self.prefix + "qr:" + scene
 
-    def create_scene(self, scene: str, poll_token: str, ttl: int):
+    def create_scene(self, scene: str, poll_token: str, ttl: int) -> None:
+        """保存待确认扫码场景。"""
         with self.redis.pipeline(transaction=True) as pipe:
-            pipe.hset(
-                self.scene_key(scene),
-                mapping={"poll_hash": digest(poll_token), "status": "pending"},
-            )
+            pipe.hset(self.scene_key(scene), "poll_hash", digest(poll_token))
+            pipe.hset(self.scene_key(scene), "status", "pending")
             pipe.expire(self.scene_key(scene), ttl)
             pipe.execute()
 
-    def confirm_scene(self, scene: str, open_id: str):
-        # 重复推送或另一个人扫码，均不能替换第一次已确认的身份。
+    def confirm_scene(self, scene: str, open_id: str) -> int:
+        """原子确认场景，防止重复回调替换首次扫码身份。"""
         return self.redis.eval(
             """
             if redis.call('HGET', KEYS[1], 'status') ~= 'pending' then return 0 end
-            redis.call('HSET', KEYS[1], 'status', 'confirmed', 'open_id', ARGV[1])
+            redis.call('HSET', KEYS[1], 'status', 'confirmed')
+            redis.call('HSET', KEYS[1], 'open_id', ARGV[1])
             return 1
-        """,
+            """,
             1,
             self.scene_key(scene),
             open_id,
         )
 
     def read_scene(self, scene: str, poll_token: str) -> dict:
+        """读取扫码场景并校验浏览器领取凭据。"""
         raw = self.redis.hgetall(self.scene_key(scene))
         data = {
-            (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
-            for k, v in raw.items()
+            (key.decode() if isinstance(key, bytes) else key): (
+                value.decode() if isinstance(value, bytes) else value
+            )
+            for key, value in raw.items()
         }
         if not data:
             return {"status": "expired"}
@@ -67,71 +72,76 @@ class CustomerSessionStore:
         return data
 
     def consume_scene(self, scene: str, poll_token: str) -> bool:
+        """原子领取扫码结果，确保同一场景只签发一次令牌。"""
         return bool(
             self.redis.eval(
                 """
-            if redis.call('HGET', KEYS[1], 'poll_hash') ~= ARGV[1] or
-               redis.call('HGET', KEYS[1], 'status') ~= 'confirmed' then return 0 end
-            redis.call('HSET', KEYS[1], 'status', 'consumed')
-            redis.call('HDEL', KEYS[1], 'open_id')
-            return 1
-        """,
+                if redis.call('HGET', KEYS[1], 'poll_hash') ~= ARGV[1] or
+                   redis.call('HGET', KEYS[1], 'status') ~= 'confirmed' then return 0 end
+                redis.call('HSET', KEYS[1], 'status', 'consumed')
+                redis.call('HDEL', KEYS[1], 'open_id')
+                return 1
+                """,
                 1,
                 self.scene_key(scene),
                 digest(poll_token),
             )
         )
 
-    def rate_limit(self, key: str, limit: int, seconds: int):
-        count = self.redis.eval(
-            """
-            local count = redis.call('INCR', KEYS[1])
-            if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
-            return count
-        """,
-            1,
-            self.prefix + "rate:" + digest(key),
-            seconds,
-        )
+    def rate_limit(self, key: str, limit: int, seconds: int) -> None:
+        """使用基础 Redis 命令限制固定时间窗内的请求次数。"""
+        cache_key = self.prefix + "rate:" + digest(key)
+        count = self.redis.incr(cache_key)
+        if count == 1:
+            self.redis.expire(cache_key, seconds)
         if count > limit:
             raise InvalidInputError("请求过于频繁，请稍后再试", 429)
 
-    def _tokens(self, customer_id: int, sid: str, refresh_id: str) -> dict:
+    def _tokens(self, customer_id: int, session_id: str, refresh_id: str) -> dict:
         now = int(time.time())
-        cfg = self.settings
         common = {
             "sub": str(customer_id),
-            "sid": sid,
+            "sid": session_id,
             "iat": now,
             "iss": "FastVela",
             "aud": "fastvela:customer",
         }
-        access = jwt.encode(
-            {**common, "type": "access", "exp": now + cfg.expire_time},
-            cfg.secret_key,
-            algorithm=cfg.algorithm,
+        access_token = jwt.encode(
+            {**common, "type": "access", "exp": now + self.settings.expire_time},
+            self.settings.secret_key,
+            algorithm=self.settings.algorithm,
         )
-        refresh = jwt.encode(
-            {**common, "type": "refresh", "jti": refresh_id, "exp": now + cfg.refresh_expire_time},
-            cfg.secret_key,
-            algorithm=cfg.algorithm,
+        refresh_token = jwt.encode(
+            {
+                **common,
+                "type": "refresh",
+                "jti": refresh_id,
+                "exp": now + self.settings.refresh_expire_time,
+            },
+            self.settings.secret_key,
+            algorithm=self.settings.algorithm,
         )
         return {
-            "access_token": access,
-            "refresh_token": refresh,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
-            "expires_in": cfg.expire_time,
+            "expires_in": self.settings.expire_time,
         }
 
     def issue(self, customer_id: int) -> dict:
-        sid, refresh_id = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-        tokens = self._tokens(customer_id, sid, refresh_id)
+        """创建客户会话并签发访问令牌和刷新令牌。"""
+        session_id = secrets.token_urlsafe(32)
+        refresh_id = secrets.token_urlsafe(32)
+        tokens = self._tokens(customer_id, session_id, refresh_id)
         self.redis.set(
-            self.prefix + "session:" + sid, digest(refresh_id), ex=self.settings.refresh_expire_time
+            self.prefix + "session:" + session_id,
+            digest(refresh_id),
+            ex=self.settings.refresh_expire_time,
         )
         return tokens
 
     def decode(self, token: str, token_type: str) -> dict:
+        """解码并校验指定类型的客户令牌。"""
         try:
             payload = jwt.decode(
                 token,
@@ -156,12 +166,14 @@ class CustomerSessionStore:
             raise AuthorizationError("客户令牌无效或已过期", 401)
 
     def verify_access(self, token: str) -> dict:
+        """校验访问令牌对应会话仍然有效。"""
         payload = self.decode(token, "access")
         if not self.redis.exists(self.prefix + "session:" + payload["sid"]):
             raise AuthorizationError("登录已失效", 401)
         return payload
 
     def refresh(self, token: str) -> dict:
+        """原子轮换刷新令牌。"""
         payload = self.decode(token, "refresh")
         refresh_id = secrets.token_urlsafe(32)
         tokens = self._tokens(int(payload["sub"]), payload["sid"], refresh_id)
@@ -170,7 +182,7 @@ class CustomerSessionStore:
             if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
             redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
             return 1
-        """,
+            """,
             1,
             self.prefix + "session:" + payload["sid"],
             digest(payload["jti"]),
@@ -181,5 +193,6 @@ class CustomerSessionStore:
             raise AuthorizationError("刷新令牌已使用或会话已撤销", 401)
         return tokens
 
-    def logout(self, sid: str):
-        self.redis.delete(self.prefix + "session:" + sid)
+    def logout(self, session_id: str) -> None:
+        """撤销客户会话。"""
+        self.redis.delete(self.prefix + "session:" + session_id)

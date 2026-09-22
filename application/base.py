@@ -16,7 +16,7 @@ from loguru import logger
 from pydantic import BaseModel
 from redis import StrictRedis
 from sqlalchemy.orm import Session
-from infrastructure.utils.cache import redis_db as global_redis_pool
+
 from api.response_body.json_response import (
     BaseResponseModel,
     PagedDataModel,
@@ -24,6 +24,7 @@ from api.response_body.json_response import (
     ResponseListModel,
     ResponseModel,
 )
+from infrastructure.utils.cache import redis_db as global_redis_pool
 
 
 class IBaseApplicationService(Protocol):
@@ -98,12 +99,15 @@ class BaseApplicationService:
     @staticmethod
     async def generate_response(data, data_class=BaseResponseModel):
         """生成响应"""
-        response_model = ResponseModel
-        if data_class is BaseResponseModel:
-
-
-            return response_model(data=data_class(result=data).model_dump())
-        return response_model(data=data_class(**data.model_dump()).model_dump())
+        if data_class is not BaseResponseModel:
+            return ResponseModel(data=data_class(**data.model_dump()).model_dump(mode="json"))
+        if isinstance(data, BaseModel):
+            payload = data.model_dump(mode="json")
+        elif isinstance(data, dict):
+            payload = data
+        else:
+            payload = {"result": data}
+        return ResponseModel(data=payload)
 
 
     @staticmethod

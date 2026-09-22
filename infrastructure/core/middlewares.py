@@ -36,6 +36,7 @@ class RequestLogMiddleWare(BaseHTTPMiddleware):
         start_time = time.time()
         # 生成唯一请求ID
         request_id = uuid.uuid4().hex
+        request.state.request_id = request_id
         # 获取客户端IP
         client_ip = get_client_ip(request)
 

@@ -17,8 +17,8 @@ from starlette.status import HTTP_200_OK
 
 from api.request_body.file_request import UploadFileRequest
 from api.response_model.common_res_model import FileResModel
+from infrastructure.auth.dependencies import require_customer
 from infrastructure.core.container import application_factory
-from infrastructure.utils.customer_auth_tools import require_customer
 from infrastructure.utils.database import get_db
 from infrastructure.utils.response_model_generator import generate_response_model
 

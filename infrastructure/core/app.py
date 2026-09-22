@@ -15,13 +15,13 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from loguru import logger
 
+from infrastructure.auth.dependencies import require_business_customer
 from infrastructure.core.error_handler import init_error_handler
 from infrastructure.core.log import ModulesForLogger, init_logger
 from infrastructure.core.middlewares import init_middlewares
 from infrastructure.core.routers import init_router
 from infrastructure.core.settings import AppSettings
 from infrastructure.utils.cache import init_cache
-from infrastructure.utils.customer_auth_tools import require_business_customer
 from infrastructure.utils.database import init_database
 from infrastructure.utils.openapi_examples import install_openapi_examples
 

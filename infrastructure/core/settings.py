@@ -10,7 +10,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field, RootModel, model_validator
 from pydantic_settings import (
@@ -180,32 +180,28 @@ class SMSErrCodes(RootModel[dict[str, str]]):
 
 
 class WeChatMPSettings(BaseModel):
-    """公众号配置，默认关闭；安全模式回调校验消息正文和 AppID。"""
+    """微信公众号接口、明文回调及二维码配置。"""
 
-    enabled: bool = False
     app_id: str = ""
     app_secret: str = ""
     original_id: str = ""
-    callback_token: str = ""
-    callback_mode: Literal["safe", "plain"] = "safe"
-    encoding_aes_key: str = ""
     qr_expire_seconds: int = Field(default=180, ge=60, le=600)
     callback_tolerance: int = Field(default=300, ge=60, le=600)
     http_timeout: float = Field(default=5, gt=0, le=5)
+    access_token_url: str = "https://api.weixin.qq.com/cgi-bin/stable_token"
+    access_token_grant_type: str = "client_credential"
+    access_token_advance_seconds: int = Field(default=300, ge=60, le=600)
+    access_token_parameter: str = "access_token"
+    qrcode_create_url: str = "https://api.weixin.qq.com/cgi-bin/qrcode/create"
+    qrcode_show_url: str = "https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket="
+    qrcode_action_name: str = "QR_STR_SCENE"
 
     @model_validator(mode="after")
-    def validate_enabled(self):
-        if self.enabled:
-            if not all((self.app_id, self.app_secret, self.original_id, self.callback_token)):
-                raise ValueError("启用公众号登录需要 AppID、AppSecret、原始ID和回调Token")
-            if self.callback_mode == "safe":
-                import base64
-                try:
-                    key = base64.b64decode(self.encoding_aes_key + "=", validate=True)
-                except ValueError:
-                    raise ValueError("EncodingAESKey 格式无效")
-                if len(self.encoding_aes_key) != 43 or len(key) != 32:
-                    raise ValueError("安全模式需要43位 EncodingAESKey")
+    def validate_credentials(self):
+        """配置任一公众号凭据时要求三项凭据完整。"""
+        credentials = (self.app_id, self.app_secret, self.original_id)
+        if any(credentials) and not all(credentials):
+            raise ValueError("公众号登录需要 AppID、AppSecret和原始ID")
         return self
 
 

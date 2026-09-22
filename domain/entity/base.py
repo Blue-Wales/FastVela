@@ -26,8 +26,8 @@ class Entity(BaseModel):
         return value
 
     class Config:
-        validate_assignment = True 
-        arbitrary_types_allowed = True 
+        validate_assignment = True
+        arbitrary_types_allowed = True
 
     def add_attachments(self, file_vo_list):
         """

@@ -9,6 +9,7 @@
 """
 
 from fastapi import FastAPI
+from loguru import logger
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -43,6 +44,28 @@ class APIRequestError(OrangeCraftException):
     """外部接口请求失败。"""
 
     pass
+
+
+class WeChatAPIError(APIRequestError):
+    """微信公众号接口返回业务错误。"""
+
+    def __init__(self, code: int, endpoint: str):
+        self.code = code
+        messages = {
+            40013: "微信公众号AppID无效，请检查wechat_mp.app_id配置",
+            40125: "微信公众号AppSecret无效，请检查wechat_mp.app_secret配置",
+            40164: (
+                "当前服务器出口IP未加入微信公众号IP白名单，"
+                "请在公众号后台“设置与开发 > 基本配置 > IP白名单”中添加后重试"
+            ),
+            48001: (
+                "当前公众号没有生成带参数二维码接口权限，"
+                "请在公众号后台接口权限列表中检查账号类型、认证状态和“生成带参数二维码”权限；"
+                "若当前账号不支持该接口，请改用具备权限的公众号或微信测试号"
+            ),
+        }
+        message = messages.get(code, f"微信接口 {endpoint} 返回业务错误")
+        super().__init__(f"{message}（errcode={code}）", 424)
 
 
 class UploadFileError(OrangeCraftException):
@@ -123,7 +146,7 @@ class NotAllowedOperation(OrangeCraftException):
 
 async def global_exception_handler(request: Request, exc: OrangeCraftException):
     return JSONResponse(
-        status_code=200,
+        status_code=exc.status_code,
         content={
             "code": ErrorCode.internal_error.value,
             "error": "服务器开小差了，需要静静",
@@ -134,7 +157,7 @@ async def global_exception_handler(request: Request, exc: OrangeCraftException):
 
 async def upload_file_exception_handler(request: Request, exc: UploadFileError):
     return JSONResponse(
-        status_code=200,
+        status_code=ErrorCode.file_upload_error.value,
         content={
             "code": ErrorCode.file_upload_error.value,
             "error": "文件表示它恐高，拒绝上传",
@@ -144,19 +167,29 @@ async def upload_file_exception_handler(request: Request, exc: UploadFileError):
 
 
 async def api_request_exception_handler(request: Request, exc: APIRequestError):
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.bind(request_id=request_id).warning(
+        "第三方接口请求失败: method={} path={} status={} reason={}",
+        request.method,
+        request.url.path,
+        exc.status_code,
+        exc.message,
+    )
     return JSONResponse(
-        status_code=200,
+        status_code=exc.status_code,
         content={
-            "code": ErrorCode.api_request_error.value,
-            "error": "外部接口放了鸽子，没来赴约",
+            "code": exc.status_code,
+            "message": exc.message,
+            "error": "第三方接口请求失败",
             "error_message": exc.message,
         },
+        headers={"Cache-Control": "no-store"},
     )
 
 
 async def not_found_exception_handler(request: Request, exc: NotFoundError):
     return JSONResponse(
-        status_code=200,
+        status_code=ErrorCode.not_found_error.value,
         content={
             "code": ErrorCode.not_found_error.value,
             "error": "您找的东西去平行宇宙了",
@@ -167,7 +200,7 @@ async def not_found_exception_handler(request: Request, exc: NotFoundError):
 
 async def delete_exception_handler(request: Request, exc: DeleteError):
     return JSONResponse(
-        status_code=200,
+        status_code=ErrorCode.delete_error.value,
         content={
             "code": ErrorCode.delete_error.value,
             "error": "资源赖着不走，可能对您有感情",
@@ -178,7 +211,7 @@ async def delete_exception_handler(request: Request, exc: DeleteError):
 
 async def duplicate_entry_exception_handler(request: Request, exc: DuplicateEntryError):
     return JSONResponse(
-        status_code=200,
+        status_code=ErrorCode.duplicate_entry_error.value,
         content={
             "code": ErrorCode.duplicate_entry_error.value,
             "error": "数据已存在，别让它分身乏术",
@@ -189,9 +222,9 @@ async def duplicate_entry_exception_handler(request: Request, exc: DuplicateEntr
 
 async def authorization_exception_handler(request: Request, exc: AuthorizationError):
     return JSONResponse(
-        status_code=200,
+        status_code=exc.status_code,
         content={
-            "code": ErrorCode.authorization_error.value,
+            "code": exc.status_code,
             "error": "凭证失忆了，请重新证明您是您",
             "error_message": exc.message,
         },
@@ -200,7 +233,7 @@ async def authorization_exception_handler(request: Request, exc: AuthorizationEr
 
 async def status_exception_handler(request: Request, exc: StatusError):
     return JSONResponse(
-        status_code=200,
+        status_code=ErrorCode.status_error.value,
         content={
             "code": ErrorCode.status_error.value,
             "error": "状态君今天心情不好，不按套路出牌",
@@ -211,9 +244,9 @@ async def status_exception_handler(request: Request, exc: StatusError):
 
 async def invalid_input_exception_handler(request: Request, exc: InvalidInputError):
     return JSONResponse(
-        status_code=200,
+        status_code=exc.status_code,
         content={
-            "code": ErrorCode.invalid_input_error.value,
+            "code": exc.status_code,
             "error": "输入有点离谱，服务器表示看不懂",
             "error_message": exc.message,
         },
@@ -222,7 +255,7 @@ async def invalid_input_exception_handler(request: Request, exc: InvalidInputErr
 
 async def permission_denied_exception_handler(request: Request, exc: PermissionDeniedError):
     return JSONResponse(
-        status_code=200,
+        status_code=ErrorCode.permission_denied_error.value,
         content={
             "code": ErrorCode.permission_denied_error.value,
             "error": "权限不足，这件事您说了不算",
@@ -233,7 +266,7 @@ async def permission_denied_exception_handler(request: Request, exc: PermissionD
 
 async def not_allowed_operation_exception_handler(request: Request, exc: NotAllowedOperation):
     return JSONResponse(
-        status_code=200,
+        status_code=ErrorCode.not_allowed_operation_error.value,
         content={
             "code": ErrorCode.not_allowed_operation_error.value,
             "error": "此路不通，换个姿势试试",
